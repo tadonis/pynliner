@@ -539,6 +539,15 @@ class ComplexSelectors(unittest.TestCase):
         output = pynliner.Pynliner().from_string(html).with_cssString(css1).with_cssString(css2).run()
         self.assertEqual(output, expected)
 
+    def test_nth_child(self):
+        css = """ table tr:nth-child(2n) td { color: #CD661D; } table tr:nth-child(2n+1) td  { color: #CD3700; } """
+        html = """<table> <tr> <td>1-1</td> <td>1-2</td> </tr> <tr> <td>2-1</td> <td>2-2</td> </tr> </table>"""
+        expected = """<table> <tr> <td style="color: #CD661D">1-1</td> <td style="color: #CD661D">1-2</td> </tr> <tr> <td style="color: #CD3700">2-1</td> <td style="color: #CD3700">2-2</td> </tr> </table>"""
+        output = pynliner.Pynliner().from_string(html).with_cssString(css).run()
+        print("expected:\n%s" % expected)
+        print("output:\n%s" % output)
+        self.assertEqual(expected, output)
+
 
 class AttributeSelectorTestCase(unittest.TestCase):
 

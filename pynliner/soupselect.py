@@ -20,11 +20,11 @@ from functools import partial
 
 import bs4
 
-ATTRIBUTE_PATTERN = re.compile(r'\[(?P<attribute>[^\s\]=~\|\^\$\*]+)(?P<operator>[=~\|\^\$\*]?)=?["\']?(?P<value>[^\]"]*)["\']?\]')
-PSEUDO_CLASS_PATTERN = re.compile(u':('
-                                  u'([^:.#(*\\[]|\\([^)]+\\))+'
-                                  u')')
+ATTRIBUTE_PATTERN = re.compile(
+    r'\[(?P<attribute>[^\s\]=~\|\^\$\*]+)(?P<operator>[=~\|\^\$\*]?)=?["\']?(?P<value>[^\]"]*)["\']?\]')
+PSEUDO_CLASS_PATTERN = re.compile(u':(([^:.#(*\\[]|\\([^)]+\\))+)')
 SELECTOR_TOKEN_PATTERN = re.compile(r'([_0-9a-zA-Z-#.:*()+]+|\[[^\]]+\])$')
+NTH_EXPR = re.compile(r'((?P<coefficient>[0-9]+)?[nN])?[\-\+]?(?P<constant>[0-9]+)?')
 
 
 def get_attribute_checker(operator, attribute, value=''):
@@ -44,7 +44,7 @@ def get_attribute_checker(operator, attribute, value=''):
         '*': lambda el: value in el.get(attribute, ''),
         # attribute is either exactly value or starts with value-
         '|': lambda el: el.get(attribute, '') == value \
-            or el.get(attribute, '').startswith('%s-' % value),
+                        or el.get(attribute, '').startswith('%s-' % value),
     }.get(operator, lambda el: el.has_attr(attribute))
 
 
@@ -73,60 +73,53 @@ def is_first_content_node(el):
         result = is_first_content_node(el.previousSibling)
     return result
 
-def is_even_content_node(el):
-    print("check even: %s" % el)
-    index = 0
-    while not is_first_content_node(el):
-        if not is_white_space(el):
-            index += 1
-        el = el.previousSibling
-    print(index)
-    return index % 2 == 0
-
-def is_odd_content_node(el):
-    print("check odd: %s" % el)
-    index = 0
-    while not is_first_content_node(el):
-        if not is_white_space(el):
-            index += 1
-        el = el.previousSibling
-    print(index % 2 == 1)
-    return index % 2 == 1
-
 def is_nth_child(el, nth):
-    nth=""
+    """nth is an expression like an+b where a,b can be 0."""
     index = 0
     while not is_first_content_node(el):
         if not is_white_space(el):
             index += 1
         el = el.previousSibling
-    if nth.isdigit():
-        return index == int(nth)
-    else:
-        match = re.match(r'([0-9]+[n|N])?([+-])?([0-9])?', nth)
-        if match:
-            print(match.group(0))
-            print(match.group(1))
-            print(match.group(2))
 
+    if nth == 'odd':
+        return (index - 1) % 2 == 0
+    elif nth == 'even':
+        return index % 2 == 0
+
+    match = re.match(NTH_EXPR, nth)
+    if not match:
+        raise Exception("nth-child expression error: nth-child(%s)" % (nth,))
+    coefficient = match.groupdict().get("coefficient")
+    coefficient = int(coefficient) if coefficient else None
+    constant = match.groupdict().get("constant")
+    constant = int(constant) if constant else None
+    if constant:
+        if coefficient:  # an+b
+            return ((index - constant) % coefficient) == 0
+        else:  # b
+            return index == constant
+    else:
+        if coefficient:  # an
+            return index % coefficient == 0
+        else:  # n
+            return True
 
 
 def get_pseudo_class_checker(psuedo_class):
     """
-    Takes a psuedo_class, like "first-child" or "last-child"
+    Takes a psuedo_class, like "first-child" or "last-child" or "nth-child(expr)"
     and returns a function that will check if the element satisfies
     that psuedo class
     """
-    if psuedo_class.startWith('nth-child'):
-        nth = psuedo_class[len("nth-child") + 1:-1]
-        return lambda el: is_nth_child(getattr(el, 'previousSibling', None), nth)
+
+    nth_child_match = re.match(r"nth-child\((\S+)\)", psuedo_class)
+    if nth_child_match:
+        nth = nth_child_match.group(1)
+        return lambda el: is_nth_child(el, nth)
+
     return {
         'first-child': lambda el: is_first_content_node(getattr(el, 'previousSibling', None)),
         'last-child': lambda el: is_last_content_node(getattr(el, 'nextSibling', None)),
-        'nth-child(2n)': lambda el: is_even_content_node(getattr(el, 'previousSibling', None)),
-        'nth-child(even)': lambda el: is_even_content_node(getattr(el, 'previousSibling', None)),
-        'nth-child(2n+1)': lambda el: is_odd_content_node(getattr(el, 'previousSibling', None)),
-        'nth-child(odd)': lambda el: is_odd_content_node(getattr(el, 'previousSibling', None)),
     }.get(psuedo_class, lambda el: False)
 
 
@@ -136,6 +129,7 @@ def get_checker(functions):
             if not func(el):
                 return False
         return el
+
     return checker
 
 
@@ -155,7 +149,6 @@ def select(soup, selector):
             if not match:
                 raise Exception("No match was found. We're done or something is broken")
             token = match.groups(1)[0]
-            print("select token: %s" % (token))
 
             # remove this token from the selector
             selector = selector.rsplit(token, 1)[0].rstrip()
@@ -172,7 +165,6 @@ def select(soup, selector):
             # Get pseudo classes from token
             #
             for match in PSEUDO_CLASS_PATTERN.finditer(token):
-                print("pseudo class: %s" % (match.groups(1)[0]))
                 checker_functions.append(get_pseudo_class_checker(match.groups(1)[0]))
 
             checker = get_checker(checker_functions)
@@ -207,12 +199,10 @@ def select(soup, selector):
                 find_dict['id'] = ids
             if classes:
                 find_dict['class'] = partial(operator_.contains, classes)
-            print("operator: '%s'" % operator)
             if operator is None:
                 # This is the first token: simply find all matches
                 for context in current_context:
                     context_matches = [el for el in context[0].find_all(tag, find_dict) if checker(el)]
-                    print("tag: %s, find_dict: %s. context_matches: %s" %(tag, find_dict, context_matches))
                     for context_match in context_matches:
                         found.append(
                             (context_match, [context_match]),
@@ -222,15 +212,11 @@ def select(soup, selector):
                 # exists an element somewhere above that element that
                 # matches the provided token
                 # ("descendant" selector)
-                print("current_context: %s" % (current_context))
                 for context in current_context:
                     context_matches = []
                     for el in context[1]:
-                        print("unchecked elements: %s" % el.findParent(tag, find_dict))
-                        print("previous: '%s'" % el.previousSibling)
                         if checker(el.findParent(tag, find_dict)):
                             context_matches.append(el)
-                    print("tag: %s, find_dict: %s. context_matches: %s" %(tag, find_dict, context_matches))
                     if context_matches:
                         found.append(
                             (context[0], context_matches),
@@ -250,11 +236,11 @@ def select(soup, selector):
                         )
             elif operator == '~':
                 # for each context in current_context
-                # check 
+                # check
                 raise NotImplementedError("~ operator is not implemented. Sad face :(")
             elif operator == '+':
                 # for each context in current_context
-                # check if the preceding sibling satisfies the
+                # check if the close preceding sibling satisfies the
                 # provided arguments
                 for context in current_context:
                     context_matches = []

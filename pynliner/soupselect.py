@@ -20,6 +20,7 @@ from functools import partial
 
 import bs4
 
+
 ATTRIBUTE_PATTERN = re.compile(
     r'\[(?P<attribute>[^\s\]=~\|\^\$\*]+)(?P<operator>[=~\|\^\$\*]?)=?["\']?(?P<value>[^\]"]*)["\']?\]')
 PSEUDO_CLASS_PATTERN = re.compile(u':(([^:.#(*\\[]|\\([^)]+\\))+)')
@@ -72,6 +73,7 @@ def is_first_content_node(el):
     if is_white_space(el):
         result = is_first_content_node(el.previousSibling)
     return result
+
 
 def is_nth_child(el, nth):
     """nth is an expression like an+b where a,b can be 0."""

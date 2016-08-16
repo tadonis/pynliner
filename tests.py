@@ -625,5 +625,14 @@ class AttributeSelectorTestCase(unittest.TestCase):
         self.assert_pynlined(html, css, expected)
 
 
+class IdenticalElementStringTest(unittest.TestCase):
+    def test_identical_element(self):
+        css = """ table tr:nth-child(2n) td { color: #CD661D; } table tr:nth-child(2n+1) td  { color: #CD3700; } """
+        html = """<table><tr><td>1-1</td><td>identical</td></tr> <tr> <td>2-1</td> <td>identical</td> </tr> </table>"""
+        expected = """<table><tr><td style="color: #CD3700">1-1</td><td style="color: #CD3700">identical</td></tr> <tr> <td style="color: #CD661D">2-1</td> <td style="color: #CD661D">identical</td> </tr> </table>"""
+        output = pynliner.Pynliner().from_string(html).with_cssString(css).run()
+        self.assertEqual(expected, output)
+
+
 if __name__ == '__main__':
     unittest.main()
